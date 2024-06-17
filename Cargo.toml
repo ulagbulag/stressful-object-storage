@@ -5,14 +5,14 @@ edition = "2021"
 
 authors = ["Ho Kim <ho.kim@ulagbulag.io>"]
 description = "Load testing tool for versatile object storage benchmarks"
-documentation = "https://docs.rs/kiss-api"
+documentation = "https://docs.rs/stressful-object-storage"
 include = ["src/**/*.rs", "Cargo.toml"]
-keywords = ["iac", "kubernetes", "openark"]
+keywords = ["kubernetes", "object-storage", "benchmark"]
 license = "AGPL-3.0-or-later"
 readme = "./README.md"
 rust-version = "1.78"
-homepage = "https://github.com/ulagbulag/OpenARK"
-repository = "https://github.com/ulagbulag/OpenARK"
+homepage = "https://github.com/ulagbulag/stressful-object-storage"
+repository = "https://github.com/ulagbulag/stressful-object-storage"
 
 [[bin]]
 name = "sos"
