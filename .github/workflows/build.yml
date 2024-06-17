@@ -1,0 +1,95 @@
+---
+name: Lint, Build, Test, and Deploy Projects
+
+on: # yamllint disable-line rule:truthy
+  push:
+    branches:
+      - master
+  pull_request:
+    branches:
+      - master
+
+env:
+  CARGO_TERM_COLOR: always
+  DEBIAN_FRONTEND: noninteractive
+
+  REGISTRY: quay.io
+  REGISTRY_USER: kerryeon
+  REGISTRY_REPOSITORY: ulagbulag
+  REGISTRY_PASSWORD: ${{ secrets.REGISTRY_PASSWORD }}
+  RELEASE_NAME: sos
+  IMAGE_NAME: sos
+
+  DEBIAN_VERSION: "bookworm"
+
+jobs:
+  lint-yaml:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Install dependencies
+        run: >
+          sudo apt-get update
+          && sudo apt-get install -y yamllint
+
+      - name: Lint
+        uses: ibiqlik/action-yamllint@v3
+        with:
+          config_file: ./.github/linters/yamllint.yaml
+
+  build-and-push-image:
+    if: ${{ github.ref == 'refs/heads/master' }}
+    needs:
+      - lint-yaml
+    runs-on: self-hosted
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Install dependencies
+        run: >
+          sudo apt-get update
+          && sudo apt-get install -y podman
+          && mkdir -p /home/runner/.docker/
+          && echo '{"auths":{"quay.io":{}}}' >/home/runner/.docker/config.json
+
+      - name: Disable container build cache
+        run: find ./ -name 'Dockerfile*' -exec sed -i '/--mount=type=cache[a-z0-9,=\/-]* \\$/ d' '{}' \;
+
+      - name: Log in to ${{ env.REGISTRY }}
+        uses: redhat-actions/podman-login@v1
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ env.REGISTRY_USER }}
+          password: ${{ env.REGISTRY_PASSWORD }}
+
+      - name: Build Image
+        id: build-and-push-image
+        uses: redhat-actions/buildah-build@v2
+        with:
+          image: ${{ env.IMAGE_NAME }}
+          tags: latest
+          context: "."
+          containerfiles: |
+            ./Dockerfile
+          build-args: |
+            DEBIAN_VERSION=${{ env.DEBIAN_VERSION }}
+
+      - name: Push To ${{ env.REGISTRY }}
+        id: push-to-quay
+        if: ${{ github.repository }} == ${{ env.REGISTRY_REPOSITORY }}/${{ env.IMAGE_NAME }}
+        uses: redhat-actions/push-to-registry@v2
+        with:
+          image: ${{ steps.build-and-push-image.outputs.image }}
+          tags: ${{ steps.build-and-push-image.outputs.tags }}
+          registry: ${{ env.REGISTRY }}/${{ env.REGISTRY_REPOSITORY }}
+
+      - name: Print image url
+        run: echo "Image pushed to ${{ steps.push-to-quay.outputs.registry-paths }}"
