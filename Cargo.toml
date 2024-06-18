@@ -33,6 +33,7 @@ clap = { version = "4.5", features = ["derive", "env"] }
 dotenv = { version = "0.15" }
 duration-string = { version = "0.4", features = ["serde"] }
 futures = { version = "0.3" }
+indicatif = { version = "0.17", features = ["futures"] }
 rand = { version = "0.8" }
 rust-s3 = { version = "0.34", default-features = false, features = [
     "fail-on-err",

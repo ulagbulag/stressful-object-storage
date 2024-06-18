@@ -1,15 +1,22 @@
 use std::{
     convert::identity,
+    fmt::Write,
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        Arc,
+    },
     time::{Duration, Instant},
 };
 
 use anyhow::{anyhow, bail, Result};
 use ark_core::signal::FunctionSignal;
+use byte_unit::{Byte, UnitType};
 use clap::Parser;
 use futures::{stream::FuturesUnordered, FutureExt, TryFutureExt, TryStreamExt};
+use indicatif::{ProgressBar, ProgressState, ProgressStyle};
 use rand::{rngs::SmallRng, RngCore, SeedableRng};
 use s3::Bucket;
-use tokio::{spawn, task::JoinHandle};
+use tokio::{spawn, task::JoinHandle, time::sleep};
 use tracing::{error, info};
 
 use crate::args::{Args, LoadTesterArgs, LoadTesterJobArgs};
@@ -74,16 +81,19 @@ impl ObjectStorageSession {
             load_tester_job:
                 LoadTesterJobArgs {
                     duration,
+                    no_progress_bar,
                     threads_max,
                 },
         } = self;
 
         let duration = duration.map(Into::into);
+        let counter = Arc::<AtomicU64>::default();
 
-        (0..threads_max)
+        let task_handler = (0..threads_max)
             .map(|id| SessionTask {
                 args: args.clone(),
                 bucket: bucket.clone(),
+                counter: counter.clone(),
                 duration,
                 id,
                 signal: signal.clone(),
@@ -94,15 +104,70 @@ impl ObjectStorageSession {
                     .map(|result| result.map_err(Into::into).and_then(identity))
             })
             .collect::<FuturesUnordered<_>>()
-            .try_collect()
-            .and_then(|()| cleanup(bucket))
-            .await
+            .try_collect();
+
+        if no_progress_bar {
+            task_handler.await
+        } else {
+            let LoadTesterArgs {
+                count,
+                size,
+                step: _,
+            } = args;
+
+            fn write_eta(state: &ProgressState, w: &mut dyn Write) {
+                let eta = state.eta().as_secs_f64();
+                write!(w, "{eta:.1}s").unwrap()
+            }
+
+            fn write_speed(state: &ProgressState, w: &mut dyn Write) {
+                match Byte::from_f64(state.per_sec())
+                    .map(|byte| byte.get_appropriate_unit(UnitType::Decimal))
+                {
+                    Some(byte) => write!(w, "{byte:.1}/s").unwrap(),
+                    None => write!(w, "UNK").unwrap(),
+                }
+            }
+
+            let pb = match count {
+                Some(count) => ProgressBar::new(count.as_u64() * size.as_u64()),
+                None => ProgressBar::new_spinner(),
+            };
+
+            let style = ProgressStyle::with_template(
+                    "{spinner:.green} [{elapsed_precise}] [{wide_bar:.cyan/blue}] {bytes}/{total_bytes} ({eta} | {speed})"
+                )?
+                .with_key("eta", write_eta)
+                .with_key("speed", write_speed)
+                .progress_chars("#>-");
+            pb.set_style(style);
+
+            loop {
+                let progressed = counter.load(Ordering::SeqCst);
+                pb.set_position(progressed * size.as_u64());
+
+                let is_finished = count
+                    .as_ref()
+                    .map(|count| count.as_u64() == progressed)
+                    .unwrap_or_default();
+                if is_finished || signal.is_terminating() {
+                    if is_finished {
+                        pb.finish();
+                    }
+                    task_handler.await?;
+                    break cleanup(bucket, signal).await;
+                }
+
+                sleep(Duration::from_millis(50)).await;
+            }
+        }
     }
 }
 
 struct SessionTask {
     args: LoadTesterArgs,
     bucket: Bucket,
+    counter: Arc<AtomicU64>,
     duration: Option<Duration>,
     id: usize,
     signal: FunctionSignal,
@@ -114,6 +179,7 @@ impl SessionTask {
         let Self {
             args: LoadTesterArgs { count, size, step },
             bucket,
+            counter,
             duration,
             id,
             signal,
@@ -122,14 +188,20 @@ impl SessionTask {
 
         let instant = Instant::now();
 
-        let mut rng = SmallRng::from_entropy();
         let count = count.map(|count| count.as_u64() as usize);
         let size = size.as_u64() as usize;
         let step = step.as_u64() as usize;
 
-        let mut buf = vec![0; size];
+        info!("Creating buffer map: {id}/{total_tasks}");
+        let mut buf = vec![0; size + step];
+        {
+            let mut rng = SmallRng::from_entropy();
+            rng.fill_bytes(&mut buf);
+        }
+
         let mut index = id;
 
+        info!("Starting task: {id}/{total_tasks}");
         loop {
             if signal.is_terminating() {
                 break;
@@ -152,14 +224,16 @@ impl SessionTask {
             };
             let path = format!("/sample/{index:06}.bin");
 
-            rng.fill_bytes(&mut buf);
-            bucket.put_object(&path, &buf).await?;
+            bucket.put_object(&path, &buf[index..index + size]).await?;
+            counter.fetch_add(1, Ordering::SeqCst);
         }
+
+        info!("Stopped task: {id}/{total_tasks}");
         Ok(())
     }
 }
 
-async fn cleanup(bucket: Bucket) -> Result<()> {
+async fn cleanup(bucket: Bucket, signal: FunctionSignal) -> Result<()> {
     info!("Cleaning up...");
 
     let delimeter = "/".into();

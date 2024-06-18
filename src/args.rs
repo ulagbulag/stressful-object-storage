@@ -1,7 +1,7 @@
 use std::fmt;
 
 use byte_unit::Byte;
-use clap::Parser;
+use clap::{ArgAction, Parser};
 use duration_string::DurationString;
 use s3::{creds::Credentials, Region};
 use serde::{Deserialize, Serialize};
@@ -167,6 +167,15 @@ pub struct LoadTesterJobArgs {
 
     #[arg(
         long,
+        env = "SOS_NO_PROGRESS_BAR",
+        action = ArgAction::SetTrue,
+        default_value_t = LoadTesterJobArgs::default_no_progress_bar(),
+    )]
+    #[serde(default = "LoadTesterJobArgs::default_no_progress_bar")]
+    pub no_progress_bar: bool,
+
+    #[arg(
+        long,
         env = "SOS_THREADS_MAX",
         value_name = "NUM",
         default_value_t = LoadTesterJobArgs::default_threads_max(),
@@ -179,12 +188,17 @@ impl Default for LoadTesterJobArgs {
     fn default() -> Self {
         Self {
             duration: None,
+            no_progress_bar: Self::default_no_progress_bar(),
             threads_max: Self::default_threads_max(),
         }
     }
 }
 
 impl LoadTesterJobArgs {
+    const fn default_no_progress_bar() -> bool {
+        false
+    }
+
     const fn default_threads_max() -> usize {
         8
     }
@@ -192,6 +206,7 @@ impl LoadTesterJobArgs {
     fn print(&self) {
         let Self {
             duration,
+            no_progress_bar,
             threads_max,
         } = self;
 
@@ -202,6 +217,7 @@ impl LoadTesterJobArgs {
                 .map(ToString::to_string)
                 .unwrap_or_else(|| "None".into(),)
         );
+        info!("no_progress_bar: {no_progress_bar}");
         info!("threads_max: {threads_max}");
     }
 }

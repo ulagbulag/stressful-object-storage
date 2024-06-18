@@ -9,6 +9,9 @@ ARG PACKAGE="sos"
 # Be ready for serving
 FROM docker.io/library/debian:${DEBIAN_VERSION} as server
 
+# Configure server environment variables
+ENV SOS_NO_PROGRESS_BAR="true"
+
 # Server Configuration
 EXPOSE 80/tcp
 WORKDIR /usr/local/bin
