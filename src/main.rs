@@ -1,7 +1,6 @@
 mod args;
 mod session;
 
-use anyhow::anyhow;
 use ark_core::signal::FunctionSignal;
 use tokio::runtime::Runtime;
 use tracing::{error, info};
@@ -16,7 +15,7 @@ fn main() {
 
 async fn main_async() {
     ::ark_core::tracer::init_once();
-    info!("Welcome to kubegraph function service!");
+    info!("Welcome to stressful object storage load tester!");
 
     let signal = FunctionSignal::default().trap_on_panic();
     if let Err(error) = signal.trap_on_sigint() {
@@ -27,11 +26,7 @@ async fn main_async() {
     info!("Booting...");
     let session = match self::session::ObjectStorageSession::try_default().await {
         Ok(session) => session,
-        Err(error) => {
-            signal
-                .panic(anyhow!("failed to init function service: {error}"))
-                .await
-        }
+        Err(error) => signal.panic(error).await,
     };
 
     info!("Creating session tasks...");
