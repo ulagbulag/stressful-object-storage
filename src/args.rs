@@ -135,7 +135,7 @@ impl Default for LoadTesterArgs {
 
 impl LoadTesterArgs {
     const fn default_size() -> Byte {
-        Byte::from_u64(64_000_000) // 64MB
+        Byte::from_u64(4_000_000) // 4MB
     }
 
     const fn default_step() -> Byte {
