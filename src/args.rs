@@ -114,6 +114,15 @@ pub struct LoadTesterArgs {
     #[serde(default)]
     pub count: Option<Byte>,
 
+    #[arg(
+        long,
+        env = "SOS_MULTIPART_THRESHOLD",
+        value_name = "BYTES",
+        default_value_t = LoadTesterArgs::default_multipart_threshold(),
+    )]
+    #[serde(default = "LoadTesterArgs::default_multipart_threshold")]
+    pub multipart_threshold: Byte,
+
     #[arg(long, env = "SOS_SIZE", value_name = "BYTES", default_value_t = LoadTesterArgs::default_size())]
     #[serde(default = "LoadTesterArgs::default_size")]
     pub size: Byte,
@@ -127,6 +136,7 @@ impl Default for LoadTesterArgs {
     fn default() -> Self {
         Self {
             count: None,
+            multipart_threshold: Self::default_multipart_threshold(),
             size: Self::default_size(),
             step: Self::default_step(),
         }
@@ -134,6 +144,10 @@ impl Default for LoadTesterArgs {
 }
 
 impl LoadTesterArgs {
+    const fn default_multipart_threshold() -> Byte {
+        Byte::from_u64(8_000_000) // 8MB
+    }
+
     const fn default_size() -> Byte {
         Byte::from_u64(4_000_000) // 4MB
     }
@@ -142,8 +156,17 @@ impl LoadTesterArgs {
         Byte::from_u64(64)
     }
 
+    pub const fn minimal_multipart_threshold() -> Byte {
+        Byte::from_u64(5_000_000) // 5MB
+    }
+
     fn print(&self) {
-        let Self { count, size, step } = self;
+        let Self {
+            count,
+            multipart_threshold,
+            size,
+            step,
+        } = self;
 
         info!(
             "count: {count}",
@@ -152,6 +175,7 @@ impl LoadTesterArgs {
                 .map(ToString::to_string)
                 .unwrap_or_else(|| "None".into(),)
         );
+        info!("multipart_threshold: {multipart_threshold}");
         info!("size: {size}");
         info!("step: {step}");
     }

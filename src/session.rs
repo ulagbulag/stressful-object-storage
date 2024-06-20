@@ -15,7 +15,7 @@ use clap::Parser;
 use futures::{stream::FuturesUnordered, FutureExt, TryFutureExt, TryStreamExt};
 use indicatif::{ProgressBar, ProgressState, ProgressStyle};
 use rand::{rngs::SmallRng, RngCore, SeedableRng};
-use s3::Bucket;
+use s3::{serde_types::InitiateMultipartUploadResponse, Bucket};
 use tokio::{spawn, task::JoinHandle, time::sleep};
 use tracing::{error, info};
 
@@ -111,6 +111,7 @@ impl ObjectStorageSession {
         } else {
             let LoadTesterArgs {
                 count,
+                multipart_threshold: _,
                 size,
                 step: _,
             } = args;
@@ -177,7 +178,13 @@ struct SessionTask {
 impl SessionTask {
     async fn try_loop_forever(self) -> Result<()> {
         let Self {
-            args: LoadTesterArgs { count, size, step },
+            args:
+                LoadTesterArgs {
+                    count,
+                    multipart_threshold,
+                    size,
+                    step,
+                },
             bucket,
             counter,
             duration,
@@ -188,9 +195,13 @@ impl SessionTask {
 
         let instant = Instant::now();
 
+        let content_type = "application/octet-stream";
         let count = count.map(|count| count.as_u64() as usize);
+        let multipart_minimal = LoadTesterArgs::minimal_multipart_threshold().as_u64() as usize;
+        let multipart_threshold = multipart_threshold.as_u64() as usize;
         let size = size.as_u64() as usize;
         let step = step.as_u64() as usize;
+        let use_multipart = size > multipart_threshold;
 
         info!("Creating buffer map: {id}/{total_tasks}");
         let mut buf = vec![0; size + step];
@@ -224,7 +235,49 @@ impl SessionTask {
             };
             let path = format!("/sample/{index:06}.bin");
 
-            bucket.put_object(&path, &buf[index..index + size]).await?;
+            let data = &buf[index..index + size];
+            if use_multipart {
+                let InitiateMultipartUploadResponse { upload_id, .. } = bucket
+                    .initiate_multipart_upload(&path, content_type)
+                    .await?;
+
+                let mut chunks = vec![];
+                {
+                    let mut pos = 0;
+                    let len = data.len();
+                    while pos < len {
+                        let pos_next = pos + multipart_threshold;
+                        let remaining = len - pos_next;
+
+                        let pos_next = if remaining >= multipart_minimal {
+                            pos_next
+                        } else {
+                            len
+                        };
+
+                        let chunk = &data[pos..pos_next];
+                        chunks.push(chunk);
+                        pos = pos_next;
+                    }
+                }
+
+                let mut parts = vec![];
+                for (part_number, reader) in chunks.iter_mut().enumerate() {
+                    let part_number = (part_number + 1).try_into()?;
+
+                    let part = bucket
+                        .put_multipart_stream(reader, &path, part_number, &upload_id, content_type)
+                        .await?;
+                    parts.push(part);
+                }
+
+                bucket
+                    .complete_multipart_upload(&path, &upload_id, parts)
+                    .await?;
+            } else {
+                let mut reader = data;
+                bucket.put_object_stream(&mut reader, &path).await?;
+            }
             counter.fetch_add(1, Ordering::SeqCst);
         }
 
