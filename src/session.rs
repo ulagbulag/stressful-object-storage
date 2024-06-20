@@ -156,7 +156,7 @@ impl ObjectStorageSession {
                         pb.finish();
                     }
                     task_handler.await?;
-                    break cleanup(bucket, signal).await;
+                    break cleanup(bucket).await;
                 }
 
                 sleep(Duration::from_millis(50)).await;
@@ -286,7 +286,7 @@ impl SessionTask {
     }
 }
 
-async fn cleanup(bucket: Bucket, signal: FunctionSignal) -> Result<()> {
+async fn cleanup(bucket: Bucket) -> Result<()> {
     info!("Cleaning up...");
 
     let delimeter = "/".into();
