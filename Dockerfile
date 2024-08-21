@@ -15,7 +15,8 @@ ENV SOS_NO_PROGRESS_BAR="true"
 # Server Configuration
 EXPOSE 80/tcp
 WORKDIR /usr/local/bin
-CMD [ "/bin/sh" ]
+ENTRYPOINT [ "/usr/bin/env", "/usr/local/bin/sos" ]
+CMD []
 
 # Install dependencies
 RUN apt-get update && apt-get install -y \
