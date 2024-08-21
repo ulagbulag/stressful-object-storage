@@ -7,7 +7,7 @@ ARG DEBIAN_VERSION="bookworm"
 ARG PACKAGE="sos"
 
 # Be ready for serving
-FROM docker.io/library/debian:${DEBIAN_VERSION} as server
+FROM docker.io/library/debian:${DEBIAN_VERSION} AS server
 
 # Configure server environment variables
 ENV SOS_NO_PROGRESS_BAR="true"
@@ -27,7 +27,7 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Be ready for building
-FROM docker.io/library/rust:1-${DEBIAN_VERSION} as builder
+FROM docker.io/library/rust:1-${DEBIAN_VERSION} AS builder
 
 # Install dependencies
 RUN apt-get update && apt-get install -y \
