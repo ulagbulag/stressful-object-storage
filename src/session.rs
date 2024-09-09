@@ -15,7 +15,7 @@ use clap::Parser;
 use futures::{stream::FuturesUnordered, FutureExt, TryFutureExt, TryStreamExt};
 use indicatif::{ProgressBar, ProgressState, ProgressStyle};
 use rand::{rngs::SmallRng, RngCore, SeedableRng};
-use s3::{serde_types::InitiateMultipartUploadResponse, Bucket};
+use s3::{serde_types::InitiateMultipartUploadResponse, Bucket, BucketConfiguration};
 use tokio::{spawn, task::JoinHandle, time::sleep};
 use tracing::{error, info};
 
@@ -35,22 +35,40 @@ impl ObjectStorageSession {
 
         let Args {
             bucket_name,
+            bucket_create,
             credentials,
             load_tester,
             load_tester_job,
             region,
         } = args;
 
-        let bucket = Bucket::new(&bucket_name, region.into(), credentials.into())
-            .map_err(|error| anyhow!("failed to initialize object storage bucket client: {error}"))?
-            .with_path_style();
+        let mut bucket = Bucket::new(
+            &bucket_name,
+            region.clone().into(),
+            credentials.clone().into(),
+        )
+        .map_err(|error| anyhow!("failed to initialize object storage bucket client: {error}"))?
+        .with_path_style();
 
-        if !bucket
-            .exists()
-            .await
-            .map_err(|error| anyhow!("failed to check object storage bucket: {error}"))?
-        {
-            bail!("no such bucket: {bucket_name}")
+        if bucket.get_object("/").await.is_err() {
+            if bucket_create {
+                let config = BucketConfiguration::private();
+                let response = Bucket::create_with_path_style(
+                    &bucket_name,
+                    region.into(),
+                    credentials.into(),
+                    config,
+                )
+                .await
+                .map_err(|error| anyhow!("failed to create object storage bucket: {error}"))?;
+                if response.success() {
+                    bucket = response.bucket.with_path_style();
+                } else {
+                    bail!("failed to create bucket: {bucket_name}")
+                }
+            } else {
+                bail!("no such bucket: {bucket_name}")
+            }
         }
 
         Ok(Self {

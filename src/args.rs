@@ -14,6 +14,15 @@ pub struct Args {
     #[arg(long, env = "AWS_BUCKET", value_name = "NAME")]
     pub bucket_name: String,
 
+    #[arg(
+        long,
+        env = "SOS_BUCKET_CREATE", 
+        action = ArgAction::SetTrue,
+        default_value_t = Args::default_bucket_create(),
+    )]
+    #[serde(default = "Args::default_bucket_create")]
+    pub bucket_create: bool,
+
     #[command(flatten)]
     #[serde(default, flatten)]
     pub credentials: CredentialsArgs,
@@ -35,6 +44,7 @@ impl Args {
     pub fn print(&self) {
         let Self {
             bucket_name,
+            bucket_create,
             credentials,
             load_tester,
             load_tester_job,
@@ -42,10 +52,17 @@ impl Args {
         } = self;
 
         info!("bucket_name: {bucket_name}");
+        info!("bucket_create: {bucket_create}");
         credentials.print();
         load_tester.print();
         load_tester_job.print();
         region.print();
+    }
+}
+
+impl Args {
+    const fn default_bucket_create() -> bool {
+        false
     }
 }
 
