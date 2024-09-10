@@ -50,7 +50,7 @@ impl ObjectStorageSession {
         .map_err(|error| anyhow!("failed to initialize object storage bucket client: {error}"))?
         .with_path_style();
 
-        if check_bucket_exists(&bucket).await {
+        if !check_bucket_exists(&bucket).await {
             if bucket_create {
                 let config = BucketConfiguration::private();
                 let response = Bucket::create_with_path_style(
