@@ -50,7 +50,7 @@ impl ObjectStorageSession {
         .map_err(|error| anyhow!("failed to initialize object storage bucket client: {error}"))?
         .with_path_style();
 
-        if bucket.get_object("/").await.is_err() {
+        if check_bucket_exists(&bucket).await {
             if bucket_create {
                 let config = BucketConfiguration::private();
                 let response = Bucket::create_with_path_style(
@@ -301,6 +301,18 @@ impl SessionTask {
 
         info!("Stopped task: {id}/{total_tasks}");
         Ok(())
+    }
+}
+
+async fn check_bucket_exists(bucket: &Bucket) -> bool {
+    const TEST_FILE: &'static str = "/_sos_bucket_test";
+
+    match bucket.put_object(TEST_FILE, TEST_FILE.as_bytes()).await {
+        Ok(_) => {
+            bucket.delete_object(TEST_FILE).await.ok();
+            true
+        }
+        Err(_) => false,
     }
 }
 
