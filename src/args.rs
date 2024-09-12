@@ -1,7 +1,7 @@
 use std::fmt;
 
 use byte_unit::Byte;
-use clap::{ArgAction, Parser};
+use clap::{ArgAction, Parser, ValueEnum};
 use duration_string::DurationString;
 use s3::{creds::Credentials, Region};
 use serde::{Deserialize, Serialize};
@@ -208,6 +208,16 @@ pub struct LoadTesterJobArgs {
 
     #[arg(
         long,
+        env = "SOS_MODE",
+        value_name = "MODE",
+        value_enum,
+        default_value_t = Mode::default(),
+    )]
+    #[serde(default)]
+    pub mode: Mode,
+
+    #[arg(
+        long,
         env = "SOS_NO_PROGRESS_BAR",
         action = ArgAction::SetTrue,
         default_value_t = LoadTesterJobArgs::default_no_progress_bar(),
@@ -229,6 +239,7 @@ impl Default for LoadTesterJobArgs {
     fn default() -> Self {
         Self {
             duration: None,
+            mode: Mode::default(),
             no_progress_bar: Self::default_no_progress_bar(),
             threads_max: Self::default_threads_max(),
         }
@@ -247,6 +258,7 @@ impl LoadTesterJobArgs {
     fn print(&self) {
         let Self {
             duration,
+            mode,
             no_progress_bar,
             threads_max,
         } = self;
@@ -258,9 +270,30 @@ impl LoadTesterJobArgs {
                 .map(ToString::to_string)
                 .unwrap_or_else(|| "None".into(),)
         );
+        info!("mode: {mode:?}");
         info!("no_progress_bar: {no_progress_bar}");
         info!("threads_max: {threads_max}");
     }
+}
+
+#[derive(
+    Copy,
+    Clone,
+    Debug,
+    Default,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+    ValueEnum,
+)]
+pub enum Mode {
+    Read,
+    #[default]
+    Write,
 }
 
 #[derive(Clone, Debug, PartialEq, Parser, Serialize, Deserialize)]
