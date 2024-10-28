@@ -17,7 +17,7 @@ use indicatif::{ProgressBar, ProgressState, ProgressStyle};
 use rand::{rngs::SmallRng, RngCore, SeedableRng};
 use s3::{serde_types::InitiateMultipartUploadResponse, Bucket, BucketConfiguration};
 use tokio::{spawn, task::JoinHandle, time::sleep};
-use tracing::{error, info};
+use tracing::{error, info, instrument, Level};
 
 use crate::args::{Args, LoadTesterArgs, LoadTesterJobArgs, Mode};
 
@@ -391,15 +391,19 @@ impl SessionTask {
 }
 
 async fn check_bucket_exists(bucket: &Bucket) -> bool {
+    match try_check_bucket_exists(bucket).await {
+        Ok(_) => true,
+        Err(error) => false,
+    }
+}
+
+#[instrument(skip_all, err(level = Level::ERROR))]
+async fn try_check_bucket_exists(bucket: &Bucket) -> Result<()> {
     const TEST_FILE: &'static str = "/_sos_bucket_test";
 
-    match bucket.put_object(TEST_FILE, TEST_FILE.as_bytes()).await {
-        Ok(_) => {
-            bucket.delete_object(TEST_FILE).await.ok();
-            true
-        }
-        Err(_) => false,
-    }
+    bucket.put_object(TEST_FILE, TEST_FILE.as_bytes()).await?;
+    bucket.delete_object(TEST_FILE).await.ok();
+    Ok(())
 }
 
 async fn cleanup(bucket: Bucket) -> Result<()> {
